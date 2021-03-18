@@ -1,0 +1,3 @@
+mecab-python3
+unidic-lite
+regex

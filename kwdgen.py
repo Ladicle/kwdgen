@@ -1,12 +1,13 @@
+from bs4 import BeautifulSoup
+from typing import List
 import MeCab
 import collections
-import datetime
+import markdown
 import re
 import regex
 import sys
 
 hiragana = regex.compile(r'\p{Script=Hiragana}+')
-kanji = regex.compile(r'\p{Script=Han}+')
 
 
 class KwdGenerator:
@@ -25,14 +26,14 @@ class KwdGenerator:
             word = node.surface
             if word.isascii() and (word.islower() or word == "The"):
                 pass
-            elif self.hiragana.search(word):
+            elif hiragana.search(word):
                 pass
             elif parts[0] == "名詞":
                 # print(node.surface, parts)
                 general = parts[1] == "普通名詞" and parts[2] != "一般"
                 if noun and (not word.isascii() and noun.isascii()):
                     if not general:
-                        self.nouns[noun] += score
+                        self.score_map[noun] += score
                     noun = ""
                     score = 0
                 noun += word
@@ -47,7 +48,7 @@ class KwdGenerator:
             if noun:
                 if not general and noun[-1] != "感" and not noun.isdecimal(
                 ) and not noun.startswith("The"):
-                    self.nouns[noun] += score
+                    self.score_map[noun] += score
                 noun = ""
                 score = 0
 
@@ -60,22 +61,23 @@ class KwdGenerator:
         kwds = []
         while sorted_kwds and len(kwds) < limits:
             cur = sorted_kwds.pop(0)[0]
-            if not (self.kanji.search(cur) and len(cur) < 2):
+            if len(cur) > 1:
                 kwds.append(cur)
         return kwds
 
 
-def get_path(args: List[int]) -> str:
+def get_path(args: List[str]) -> str:
     if len(args) != 2:
         raise ValueError("<path/to/post> is a required argument")
     return args[1]
 
 
-def md2txt(line: str) -> str:
-    line = re.sub(r'https?://[\w/:%#\$&\?\(\)~\.=\+\-…]+', "", line)  # URLs
-    line = re.sub(r'`[^`]+`', "", line)  # inline codes
-    line = re.sub(r'\{#[^}]*\}', "", line)  # in-page links
-    return line
+def hugoMd2txt(md: str) -> str:
+    md = re.sub(r'`[^`]+`', "", md)
+    md = re.sub(r'\{#[^}]*\}', "", md)
+    html = markdown.markdown(md)
+    soup = BeautifulSoup(html, features='html.parser')
+    return soup.get_text()
 
 
 def main():
@@ -88,19 +90,17 @@ def main():
     with open(filepath, 'r') as f:
         for line in f:
             line = line.strip()
-
             if line.startswith("```"):
                 code_block = not code_block
             elif code_block:  # skip code block
                 continue
             elif sep_cnt >= 2:  # skip meta block
-                line = md2txt(line)
+                line = hugoMd2txt(line)
                 kwdgen.scoring(line)
             elif line == "---":
                 sep_cnt += 1
 
-    tags = kwdgen.generate()
-    print(' '.join(tags), end='')
+    print(' '.join(kwdgen.generate()), end='')
 
 
 main()
